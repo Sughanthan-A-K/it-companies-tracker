@@ -505,13 +505,13 @@ export default function App() {
               {/* STICKY THEAD - Table scroll panna kooda header maraiyaave marayathu! */}
               <thead className="sticky top-0 z-20 shadow-xs bg-slate-100/95 backdrop-blur-md">
                 <tr className="text-slate-700 font-extrabold uppercase tracking-wider text-[11px] border-b border-slate-200">
-                  <th className="py-3 px-3 w-10 text-center bg-slate-100/95">Done?</th>
-                  <th className="py-3 px-2 w-8 text-center bg-slate-100/95">#</th>
-                  <th className="py-3 px-3 min-w-[190px] bg-slate-100/95">Company Name & Area</th>
-                  <th className="py-3 px-3 min-w-[140px] hidden md:table-cell bg-slate-100/95">Calling Status</th>
-                  <th className="py-3 px-3 min-w-[140px] hidden md:table-cell bg-slate-100/95">Visit Status</th>
-                  <th className="py-3 px-3 min-w-[120px] bg-slate-100/95">Phone Number</th>
-                  <th className="py-3 px-3 text-center min-w-[110px] bg-slate-100/95">Actions</th>
+                  <th className="py-2.5 px-1.5 w-7 text-center bg-slate-100/95">Done</th>
+                  <th className="py-2.5 px-1 w-6 text-center bg-slate-100/95">#</th>
+                  <th className="py-2.5 px-3 min-w-[200px] bg-slate-100/95">Company Name & Area</th>
+                  <th className="py-2.5 px-2.5 min-w-[130px] hidden md:table-cell bg-slate-100/95">Calling Status</th>
+                  <th className="py-2.5 px-2.5 min-w-[130px] hidden md:table-cell bg-slate-100/95">Visit Status</th>
+                  <th className="py-2.5 px-3 whitespace-nowrap min-w-[145px] bg-slate-100/95">Phone Number</th>
+                  <th className="py-2.5 px-2.5 text-center min-w-[100px] bg-slate-100/95">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -536,8 +536,8 @@ export default function App() {
                         setActiveMobileCompany(c);
                       }}
                     >
-                      {/* Done Checkbox with Styled Confirmation Modal */}
-                      <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      {/* Done Checkbox - Compact & Tight */}
+                      <td className="py-2.5 px-1.5 w-7 text-center" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={isDone}
@@ -548,7 +548,7 @@ export default function App() {
                       </td>
 
                       {/* Index */}
-                      <td className="py-2.5 px-2 text-center text-slate-400 font-mono text-[11px]">
+                      <td className="py-2.5 px-1 w-6 text-center text-slate-400 font-mono text-[11px]">
                         {idx + 1}
                       </td>
 
@@ -614,20 +614,20 @@ export default function App() {
                         </select>
                       </td>
 
-                      {/* Phone */}
-                      <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
+                      {/* Phone - Single line nowrap, clean spacing */}
+                      <td className="py-2.5 px-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         {c.phone ? (
                           <a
                             href={`tel:${c.phone.replace(/[^0-9+]/g, '')}`}
-                            className={`font-bold flex items-center gap-1 ${
+                            className={`font-extrabold text-xs inline-flex items-center gap-1.5 ${
                               isDone ? 'text-slate-400 line-through' : 'text-emerald-700 hover:text-emerald-800'
                             }`}
                           >
-                            <Phone className="w-3 h-3 text-emerald-600" />
-                            <span>{c.phone}</span>
+                            <Phone className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                            <span className="font-mono tracking-tight">{c.phone}</span>
                           </a>
                         ) : (
-                          <span className="text-slate-400 italic">No phone</span>
+                          <span className="text-slate-400 italic text-[11px]">No phone</span>
                         )}
                       </td>
 
