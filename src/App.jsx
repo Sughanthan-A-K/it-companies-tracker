@@ -159,6 +159,37 @@ export default function App() {
   const [isAddCityModalOpen, setIsAddCityModalOpen] = useState(false);
   const [focusTargetForMap, setFocusTargetForMap] = useState(null);
   const [lastVisitedAction, setLastVisitedAction] = useState(null); // For Instant Undo Toast notification
+  const [userLocation, setUserLocation] = useState(null);
+
+  // Live User Location for Table Distance Sorting
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserLocation([pos.coords.latitude, pos.coords.longitude]);
+        },
+        (err) => {
+          console.warn("Table GPS location:", err);
+          setUserLocation([11.9360, 79.8290]); // fallback to Pondicherry center
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    }
+  }, []);
+
+  // Distance formula (KM)
+  const calculateDist = (lat1, lon1, lat2, lon2) => {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return 99999;
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
 
   // Save custom added cities
   useEffect(() => {
@@ -351,14 +382,35 @@ export default function App() {
     });
   };
 
-  // Filtered list
-  const filtered = companies.filter(c => {
-    if (hideDone && c.isCompleted) return false;
-    const q = search.toLowerCase();
-    const matchQ = !q || c.name.toLowerCase().includes(q) || c.area.toLowerCase().includes(q) || (c.techStack && c.techStack.join(' ').toLowerCase().includes(q));
-    const matchArea = selectedArea === 'All Areas' || c.area.toLowerCase().includes(selectedArea.toLowerCase());
-    return matchQ && matchArea;
-  });
+  // Filtered & Distance-sorted list based on user location
+  const filtered = useMemo(() => {
+    let list = companies.filter(c => {
+      if (hideDone && c.isCompleted) return false;
+      const q = search.toLowerCase();
+      const matchQ = !q || c.name.toLowerCase().includes(q) || c.area.toLowerCase().includes(q) || (c.techStack && c.techStack.join(' ').toLowerCase().includes(q));
+      const matchArea = selectedArea === 'All Areas' || c.area.toLowerCase().includes(selectedArea.toLowerCase());
+      return matchQ && matchArea;
+    });
+
+    // Compute live distance from user position
+    const refPoint = userLocation || [11.9360, 79.8290];
+    list = list.map(c => {
+      const dist = (c.lat && c.lng) 
+        ? calculateDist(refPoint[0], refPoint[1], c.lat, c.lng) 
+        : 99999;
+      return { ...c, distanceKm: dist };
+    });
+
+    // Sort: Nearest to user location first! (Unvisited first, then visited at bottom if not hidden)
+    list.sort((a, b) => {
+      if (a.isCompleted !== b.isCompleted) {
+        return a.isCompleted ? 1 : -1;
+      }
+      return a.distanceKm - b.distanceKm;
+    });
+
+    return list;
+  }, [companies, hideDone, search, selectedArea, userLocation]);
 
   const completedCount = companies.filter(c => c.isCompleted).length;
   const pendingCount = companies.length - completedCount;
@@ -572,6 +624,11 @@ export default function App() {
                           }`}>
                             {c.area}
                           </span>
+                          {c.distanceKm !== undefined && c.distanceKm < 9999 && (
+                            <span className="text-[10px] font-extrabold text-orange-600 bg-orange-50 border border-orange-200 px-1.5 py-0.2 rounded font-mono">
+                              📍 ~{c.distanceKm.toFixed(1)} km
+                            </span>
+                          )}
                           {c.notes && (
                             <span className="text-[10px] text-emerald-600 font-semibold truncate max-w-[130px]">
                               📝 {c.notes}
