@@ -179,11 +179,15 @@ export default function App() {
     }
   }, []);
 
-  // Touch Gestures: Left to Right Swipe opens Building Audit Drawer
+  // Touch & Mouse Drag Gestures: Left to Right Swipe opens Building Audit Drawer
   const touchStartXRef = useRef(null);
   const touchStartYRef = useRef(null);
+  const mouseStartXRef = useRef(null);
+  const mouseStartYRef = useRef(null);
+  const isMouseDownRef = useRef(false);
 
   useEffect(() => {
+    // Mobile Touch Handlers
     const handleTouchStart = (e) => {
       touchStartXRef.current = e.touches[0].clientX;
       touchStartYRef.current = e.touches[0].clientY;
@@ -194,19 +198,47 @@ export default function App() {
       const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
       const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
 
-      // Detect swipe from left edge (e.g. started within first 80px from left) towards right
-      if (touchStartXRef.current < 85 && deltaX > 60 && Math.abs(deltaY) < 100) {
+      // Detect swipe from left edge (started within first 90px from left) towards right
+      if (touchStartXRef.current < 90 && deltaX > 50 && Math.abs(deltaY) < 120) {
         setIsBuildingAuditOpen(true);
       }
       touchStartXRef.current = null;
       touchStartYRef.current = null;
     };
 
+    // Laptop / Desktop Mouse Drag Handlers
+    const handleMouseDown = (e) => {
+      // If mouse starts near left edge (within first 80px)
+      if (e.clientX < 80) {
+        isMouseDownRef.current = true;
+        mouseStartXRef.current = e.clientX;
+        mouseStartYRef.current = e.clientY;
+      }
+    };
+
+    const handleMouseUp = (e) => {
+      if (!isMouseDownRef.current || mouseStartXRef.current === null) return;
+      const deltaX = e.clientX - mouseStartXRef.current;
+      const deltaY = e.clientY - (mouseStartYRef.current || 0);
+
+      // Dragged towards right > 40px
+      if (deltaX > 40 && Math.abs(deltaY) < 120) {
+        setIsBuildingAuditOpen(true);
+      }
+      isMouseDownRef.current = false;
+      mouseStartXRef.current = null;
+      mouseStartYRef.current = null;
+    };
+
     window.addEventListener('touchstart', handleTouchStart);
     window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
     return () => {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
     };
   }, []);
 
@@ -452,8 +484,17 @@ export default function App() {
     <div className="h-screen w-screen overflow-hidden bg-slate-50 text-slate-800 flex flex-col font-sans">
       {/* 1. STICKY TOP NAVBAR (NEVER SCROLLS AWAY) */}
       <header className="bg-white border-b border-slate-200 px-2 sm:px-6 py-2 flex items-center justify-between gap-1.5 sm:gap-2 z-40 flex-shrink-0 shadow-xs">
-        {/* Left: Active Location Button (Single tap to search/change) */}
-        <div className="flex items-center min-w-0">
+        {/* Left: Active Location Button & Quick Building Scan Button */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <button
+            onClick={() => setIsBuildingAuditOpen(true)}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white active:scale-95 rounded-xl px-2.5 py-1.5 shadow-xs font-black text-xs transition-all"
+            title="Open Building-by-Building Deep Scan Drawer"
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>🏢 Buildings</span>
+          </button>
+
           <button
             onClick={() => setIsAddCityModalOpen(true)}
             className="flex items-center gap-1.5 bg-slate-100 hover:bg-blue-50 active:scale-95 border border-slate-300 hover:border-blue-400 rounded-xl px-2.5 py-1.5 shadow-2xs transition-all text-left"
