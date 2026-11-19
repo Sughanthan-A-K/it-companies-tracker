@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Radar, 
   MapPin, 
@@ -34,6 +34,7 @@ import RouteMapModal from './components/RouteMapModal';
 import ConfirmationModal from './components/ConfirmationModal';
 import VisitedHistoryModal from './components/VisitedHistoryModal';
 import AddCityModal from './components/AddCityModal';
+import BuildingAuditDrawer from './components/BuildingAuditDrawer';
 
 const CITY_STORAGE_PREFIX = 'multi_city_it_crm_';
 const INITIAL_CITIES = ["Pondicherry", "Cuddalore", "Coimbatore", "Chennai", "Madurai", "Trichy", "Salem", "Bangalore"];
@@ -157,6 +158,7 @@ export default function App() {
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAddCityModalOpen, setIsAddCityModalOpen] = useState(false);
+  const [isBuildingAuditOpen, setIsBuildingAuditOpen] = useState(false);
   const [focusTargetForMap, setFocusTargetForMap] = useState(null);
   const [lastVisitedAction, setLastVisitedAction] = useState(null); // For Instant Undo Toast notification
   const [userLocation, setUserLocation] = useState(null);
@@ -175,6 +177,37 @@ export default function App() {
         { enableHighAccuracy: true, timeout: 8000 }
       );
     }
+  }, []);
+
+  // Touch Gestures: Left to Right Swipe opens Building Audit Drawer
+  const touchStartXRef = useRef(null);
+  const touchStartYRef = useRef(null);
+
+  useEffect(() => {
+    const handleTouchStart = (e) => {
+      touchStartXRef.current = e.touches[0].clientX;
+      touchStartYRef.current = e.touches[0].clientY;
+    };
+
+    const handleTouchEnd = (e) => {
+      if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+      const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+      const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+
+      // Detect swipe from left edge (e.g. started within first 80px from left) towards right
+      if (touchStartXRef.current < 85 && deltaX > 60 && Math.abs(deltaY) < 100) {
+        setIsBuildingAuditOpen(true);
+      }
+      touchStartXRef.current = null;
+      touchStartYRef.current = null;
+    };
+
+    window.addEventListener('touchstart', handleTouchStart);
+    window.addEventListener('touchend', handleTouchEnd);
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
   }, []);
 
   // Distance formula (KM)
@@ -465,17 +498,12 @@ export default function App() {
 
           {/* SYNC / SCAN BUTTON */}
           <button
-            onClick={startIncrementalScan}
-            disabled={isScanning}
-            className={`p-1.5 sm:px-2.5 sm:py-2 rounded-xl font-bold text-xs flex items-center gap-1 transition-all ${
-              isScanning 
-                ? 'bg-amber-600 text-white cursor-not-allowed animate-pulse' 
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-            }`}
-            title="Scan for new IT companies"
+            onClick={() => setIsBuildingAuditOpen(true)}
+            className="p-1.5 sm:px-2.5 sm:py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-xs active:scale-95 transition-all"
+            title="Open Building-by-Building Deep Scan Drawer (or swipe from left)"
           >
-            <Radar className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
-            <span className="hidden lg:inline">{isScanning ? `${currentArea}...` : 'SCAN'}</span>
+            <Building2 className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Building Scan</span>
           </button>
 
           {/* Export Excel */}
@@ -966,6 +994,16 @@ export default function App() {
         onClose={() => setIsAddCityModalOpen(false)}
         existingCities={cityList}
         onAddNewCity={handleAddNewCity}
+      />
+
+      {/* Building-by-Building Deep Scan Drawer (Swipe left-to-right or tap button) */}
+      <BuildingAuditDrawer
+        isOpen={isBuildingAuditOpen}
+        onClose={() => setIsBuildingAuditOpen(false)}
+        existingCompanies={companies}
+        onAddNewCompany={(newComp) => {
+          setCompanies(prev => [newComp, ...prev]);
+        }}
       />
 
       {/* Instant Undo Toast Notification when accidentally visited */}
