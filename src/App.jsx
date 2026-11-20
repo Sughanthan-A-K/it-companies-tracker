@@ -1,581 +1,253 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Radar, 
+  Search, 
   MapPin, 
   Phone, 
   Navigation, 
-  ExternalLink, 
-  Download, 
-  RotateCcw, 
-  Search, 
   CheckCircle2, 
-  Building2,
-  FileSpreadsheet,
-  Map as MapIcon,
-  ChevronRight,
-  UserCheck,
-  Edit2,
-  Check,
-  X
+  RotateCcw, 
+  FileSpreadsheet, 
+  Check, 
+  X,
+  ExternalLink,
+  Info
 } from 'lucide-react';
-import { PONDICHERRY_AREA_SCAN_REGISTRY } from './data/areaScannerRegistry';
-import { 
-  CITIES_CONFIG, 
-  CUDDALORE_AREA_SCAN_REGISTRY, 
-  COIMBATORE_AREA_SCAN_REGISTRY, 
-  CHENNAI_AREA_SCAN_REGISTRY,
-  MADURAI_AREA_SCAN_REGISTRY,
-  TRICHY_AREA_SCAN_REGISTRY,
-  SALEM_AREA_SCAN_REGISTRY,
-  BANGALORE_AREA_SCAN_REGISTRY
-} from './data/multiCityRegistry';
+import { VERIFIED_PONDICHERRY_IT_COMPANIES } from './data/verifiedPondyCompanies';
 import { exportToExcel } from './utils/exportUtils';
 import RouteMapModal from './components/RouteMapModal';
-import ConfirmationModal from './components/ConfirmationModal';
 import VisitedHistoryModal from './components/VisitedHistoryModal';
-import AddCityModal from './components/AddCityModal';
-import BuildingAuditDrawer from './components/BuildingAuditDrawer';
 
-const CITY_STORAGE_PREFIX = 'multi_city_it_crm_';
-const INITIAL_CITIES = ["Pondicherry", "Cuddalore", "Coimbatore", "Chennai", "Madurai", "Trichy", "Salem", "Bangalore"];
+const STORAGE_KEY = 'pondy_it_field_tracker_v3';
 
-const getCityRegistry = (cityName, customCityConfigs = {}) => {
-  switch (cityName) {
-    case 'Cuddalore':
-      return CUDDALORE_AREA_SCAN_REGISTRY;
-    case 'Coimbatore':
-      return COIMBATORE_AREA_SCAN_REGISTRY;
-    case 'Chennai':
-      return CHENNAI_AREA_SCAN_REGISTRY;
-    case 'Madurai':
-      return MADURAI_AREA_SCAN_REGISTRY;
-    case 'Trichy':
-      return TRICHY_AREA_SCAN_REGISTRY;
-    case 'Salem':
-      return SALEM_AREA_SCAN_REGISTRY;
-    case 'Bangalore':
-      return BANGALORE_AREA_SCAN_REGISTRY;
-    case 'Pondicherry':
-      return PONDICHERRY_AREA_SCAN_REGISTRY;
-    default:
-      // Return custom configured registry or synthetic area scanner
-      if (customCityConfigs[cityName]?.scanRegistry) {
-        return customCityConfigs[cityName].scanRegistry;
-      }
-      return [
-        {
-          area: `${cityName} Tech Corridor`,
-          description: `IT & Software Companies in ${cityName}`,
-          coordinates: customCityConfigs[cityName]?.centerCoordinates || [11.9360, 79.8290],
-          companies: [
-            {
-              id: `comp-${cityName.toLowerCase().slice(0,3)}-1`,
-              name: `${cityName} Infotech Solutions`,
-              city: cityName,
-              area: `${cityName} Central`,
-              category: "Software Development & Cloud Services",
-              building: "City Center Commercial Tech Complex",
-              address: `Main Road, ${cityName} City Center`,
-              phone: "+91 9840012345",
-              email: `info@${cityName.toLowerCase()}infotech.com`,
-              website: `https://${cityName.toLowerCase()}infotech.com`,
-              mapsQuery: `IT companies ${cityName}`,
-              lat: (customCityConfigs[cityName]?.centerCoordinates?.[0] || 11.9360) + 0.002,
-              lng: (customCityConfigs[cityName]?.centerCoordinates?.[1] || 79.8290) + 0.002,
-              techStack: ["React", "Python", "Full Stack", "Cloud"],
-              callingStatus: "Not Called",
-              visitStatus: "Yet to Visit",
-              contactPerson: "Branch Operations",
-              notes: `Key software provider in ${cityName}.`,
-              updatedAt: "2026-11-18"
-            }
-          ]
-        }
-      ];
-  }
+// Clean Color Badges for Calling Status
+export const CALLING_STATUS_STYLES = {
+  'Not Called': 'bg-slate-100 text-slate-700 border-slate-300',
+  'Called - Follow Up': 'bg-amber-100 text-amber-800 border-amber-300 font-bold',
+  'Positive / Interview': 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold',
+  'Not Hiring / Rejected': 'bg-rose-100 text-rose-800 border-rose-300 font-bold',
+  'No Answer / Switch Off': 'bg-purple-100 text-purple-800 border-purple-300'
 };
 
-const getInitialCityData = (cityName, customCityConfigs = {}) => {
-  try {
-    const saved = localStorage.getItem(`${CITY_STORAGE_PREFIX}${cityName.toLowerCase()}`);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch (e) {
-    console.error(e);
-  }
-  const registry = getCityRegistry(cityName, customCityConfigs);
-  const initialList = [];
-  registry.forEach(sec => {
-    sec.companies.forEach(comp => {
-      initialList.push({ ...comp, isCompleted: false, city: comp.city || cityName });
-    });
-  });
-  return initialList;
+// Clean Color Badges for Visit Status
+export const VISIT_STATUS_STYLES = {
+  'Yet to Visit': 'bg-slate-100 text-slate-700 border-slate-300',
+  'Visited (Met HR)': 'bg-emerald-600 text-white border-emerald-600 font-extrabold shadow-xs',
+  'Office Verified': 'bg-blue-100 text-blue-800 border-blue-300 font-bold',
+  'Office Shifted': 'bg-rose-100 text-rose-800 border-rose-300 font-bold'
 };
 
 export default function App() {
-  const [cityList, setCityList] = useState(() => {
-    try {
-      const saved = localStorage.getItem('custom_added_it_cities_v1');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error(e);
-    }
-    return INITIAL_CITIES;
-  });
-
-  const [customCityConfigs, setCustomCityConfigs] = useState(() => {
-    try {
-      const saved = localStorage.getItem('custom_city_configs_v1');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error(e);
-    }
-    return {};
-  });
-
-  const [selectedCity, setSelectedCity] = useState(() => {
-    return localStorage.getItem('last_selected_it_city') || 'Pondicherry';
-  });
-
   const [companies, setCompanies] = useState(() => {
-    const initCity = localStorage.getItem('last_selected_it_city') || 'Pondicherry';
-    let savedConfigs = {};
     try {
-      const saved = localStorage.getItem('custom_city_configs_v1');
-      if (saved) savedConfigs = JSON.parse(saved);
-    } catch (e) {}
-    return getInitialCityData(initCity, savedConfigs);
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return VERIFIED_PONDICHERRY_IT_COMPANIES;
   });
 
-  const [isScanning, setIsScanning] = useState(false);
-  const [currentArea, setCurrentArea] = useState('');
-  const [progressIndex, setProgressIndex] = useState(0);
   const [search, setSearch] = useState('');
   const [selectedArea, setSelectedArea] = useState('All Areas');
-  const [hideDone, setHideDone] = useState(false);
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('All Status');
+  const [hideVisited, setHideVisited] = useState(false);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  const [isAddCityModalOpen, setIsAddCityModalOpen] = useState(false);
-  const [isBuildingAuditOpen, setIsBuildingAuditOpen] = useState(false);
   const [focusTargetForMap, setFocusTargetForMap] = useState(null);
-  const [lastVisitedAction, setLastVisitedAction] = useState(null); // For Instant Undo Toast notification
-  const [userLocation, setUserLocation] = useState(null);
-
-  // Live User Location for Table Distance Sorting
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setUserLocation([pos.coords.latitude, pos.coords.longitude]);
-        },
-        (err) => {
-          console.warn("Table GPS location:", err);
-          setUserLocation([11.9360, 79.8290]); // fallback to Pondicherry center
-        },
-        { enableHighAccuracy: true, timeout: 8000 }
-      );
-    }
-  }, []);
-
-  // Touch & Mouse Drag Gestures: Left to Right Swipe opens Building Audit Drawer
-  const touchStartXRef = useRef(null);
-  const touchStartYRef = useRef(null);
-  const mouseStartXRef = useRef(null);
-  const mouseStartYRef = useRef(null);
-  const isMouseDownRef = useRef(false);
-
-  useEffect(() => {
-    // Mobile Touch Handlers
-    const handleTouchStart = (e) => {
-      touchStartXRef.current = e.touches[0].clientX;
-      touchStartYRef.current = e.touches[0].clientY;
-    };
-
-    const handleTouchEnd = (e) => {
-      if (touchStartXRef.current === null || touchStartYRef.current === null) return;
-      const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
-      const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
-
-      // Detect swipe from left edge (started within first 90px from left) towards right
-      if (touchStartXRef.current < 90 && deltaX > 50 && Math.abs(deltaY) < 120) {
-        setIsBuildingAuditOpen(true);
-      }
-      touchStartXRef.current = null;
-      touchStartYRef.current = null;
-    };
-
-    // Laptop / Desktop Mouse Drag Handlers
-    const handleMouseDown = (e) => {
-      // If mouse starts near left edge (within first 80px)
-      if (e.clientX < 80) {
-        isMouseDownRef.current = true;
-        mouseStartXRef.current = e.clientX;
-        mouseStartYRef.current = e.clientY;
-      }
-    };
-
-    const handleMouseUp = (e) => {
-      if (!isMouseDownRef.current || mouseStartXRef.current === null) return;
-      const deltaX = e.clientX - mouseStartXRef.current;
-      const deltaY = e.clientY - (mouseStartYRef.current || 0);
-
-      // Dragged towards right > 40px
-      if (deltaX > 40 && Math.abs(deltaY) < 120) {
-        setIsBuildingAuditOpen(true);
-      }
-      isMouseDownRef.current = false;
-      mouseStartXRef.current = null;
-      mouseStartYRef.current = null;
-    };
-
-    window.addEventListener('touchstart', handleTouchStart);
-    window.addEventListener('touchend', handleTouchEnd);
-    window.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('touchstart', handleTouchStart);
-      window.removeEventListener('touchend', handleTouchEnd);
-      window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, []);
-
-  // Distance formula (KM)
-  const calculateDist = (lat1, lon1, lat2, lon2) => {
-    if (!lat1 || !lon1 || !lat2 || !lon2) return 99999;
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
-
-  // Save custom added cities
-  useEffect(() => {
-    localStorage.setItem('custom_added_it_cities_v1', JSON.stringify(cityList));
-  }, [cityList]);
-
-  useEffect(() => {
-    localStorage.setItem('custom_city_configs_v1', JSON.stringify(customCityConfigs));
-  }, [customCityConfigs]);
-
-  // Confirmation Modal State (No native alert!)
-  const [confirmModalData, setConfirmModalData] = useState({
-    isOpen: false,
-    title: '',
-    message: '',
-    company: null,
-    onConfirm: () => {},
-    type: 'primary'
-  });
-
-  // Mobile Quick Action Drawer for Table
-  const [activeMobileCompany, setActiveMobileCompany] = useState(null);
-  const [editingNotesId, setEditingNotesId] = useState(null);
+  const [activeCompanyForDetails, setActiveCompanyForDetails] = useState(null);
   const [tempNotes, setTempNotes] = useState('');
-  const [tempContact, setTempContact] = useState('');
 
-  // Save selected city preference
-  useEffect(() => {
-    localStorage.setItem('last_selected_it_city', selectedCity);
-  }, [selectedCity]);
-
-  // Auto-save city's companies to its dedicated LocalStorage partition
+  // Persist state to LocalStorage
   useEffect(() => {
     try {
-      localStorage.setItem(`${CITY_STORAGE_PREFIX}${selectedCity.toLowerCase()}`, JSON.stringify(companies));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(companies));
     } catch (e) {
       console.error(e);
     }
-  }, [companies, selectedCity]);
+  }, [companies]);
 
-  // Handle City Change
-  const handleCityChange = (newCity) => {
-    if (newCity === selectedCity) return;
-    setSelectedCity(newCity);
-    setSelectedArea('All Areas');
-    setSearch('');
-    const loadedData = getInitialCityData(newCity, customCityConfigs);
-    setCompanies(loadedData);
-  };
+  // Extract unique areas for the clean filter dropdown
+  const uniqueAreas = useMemo(() => {
+    const set = new Set();
+    VERIFIED_PONDICHERRY_IT_COMPANIES.forEach(c => {
+      if (c.area) set.add(c.area.trim());
+    });
+    return ['All Areas', ...Array.from(set).sort()];
+  }, []);
 
-  // Add Any Searched City to Application
-  const handleAddNewCity = (cityObj) => {
-    const cityName = cityObj.name;
-    if (!cityList.includes(cityName)) {
-      setCityList(prev => [...prev, cityName]);
-    }
-    const updatedConfigs = {
-      ...customCityConfigs,
-      [cityName]: {
-        name: cityName,
-        state: cityObj.state || 'India',
-        centerCoordinates: [cityObj.lat, cityObj.lng],
-        zoom: 13,
-        mainAreas: cityObj.mainAreas || ["All Areas", `${cityName} Central`, `${cityName} IT Corridor`, `${cityName} Bypass`]
-      }
-    };
-    setCustomCityConfigs(updatedConfigs);
-    setSelectedCity(cityName);
-    setSelectedArea('All Areas');
-    setSearch('');
-
-    const loadedData = getInitialCityData(cityName, updatedConfigs);
-    setCompanies(loadedData);
-  };
-
-  // Sync scan for new additions in the ACTIVE SELECTED CITY
-  const startIncrementalScan = async () => {
-    setIsScanning(true);
-    setProgressIndex(0);
-
-    let currentList = [...companies];
-    const existingNames = new Set(currentList.map(c => c.name.toLowerCase().trim()));
-    const activeRegistry = getCityRegistry(selectedCity, customCityConfigs);
-
-    for (let i = 0; i < activeRegistry.length; i++) {
-      const areaData = activeRegistry[i];
-      setCurrentArea(areaData.area);
-      setProgressIndex(i + 1);
-
-      await new Promise(r => setTimeout(r, 220));
-
-      areaData.companies.forEach(incoming => {
-        if (!existingNames.has(incoming.name.toLowerCase().trim())) {
-          currentList.push({ ...incoming, isCompleted: false, city: incoming.city || selectedCity });
-          existingNames.add(incoming.name.toLowerCase().trim());
+  // Update Status directly
+  const handleUpdateStatus = (id, field, value) => {
+    setCompanies(prev => prev.map(c => {
+      if (c.id === id) {
+        const updated = { ...c, [field]: value };
+        if (field === 'visitStatus' && value === 'Visited (Met HR)') {
+          updated.isCompleted = true;
+        } else if (field === 'visitStatus' && value === 'Yet to Visit') {
+          updated.isCompleted = false;
         }
-      });
-
-      setCompanies([...currentList]);
-    }
-
-    setIsScanning(false);
-    setCurrentArea(`${selectedCity} Scanned!`);
-  };
-
-  // Safe Professional Modal Confirmation for Toggle Done
-  const triggerToggleDone = (c) => {
-    if (!c.isCompleted) {
-      // Opening Professional In-Theme Modal instead of crude alert()
-      setConfirmModalData({
-        isOpen: true,
-        title: "Mark as Visited & Strike-Off?",
-        company: c,
-        message: "This company will be struck off from your active checklist. You can always uncheck it anytime to restore.",
-        type: "primary",
-        onConfirm: () => {
-          executeToggle(c.id, true);
-        }
-      });
-    } else {
-      executeToggle(c.id, false);
-    }
-  };
-
-  const executeToggle = (id, nextState) => {
-    let affectedCompany = companies.find(c => c.id === id);
-    setCompanies(prev => prev.map(item => {
-      if (item.id === id) {
-        return {
-          ...item,
-          isCompleted: nextState,
-          visitStatus: nextState ? 'Direct Visit Completed - Met HR/Manager' : 'Yet to Visit'
-        };
+        return updated;
       }
-      return item;
+      return c;
     }));
 
-    if (activeMobileCompany && activeMobileCompany.id === id) {
-      setActiveMobileCompany(prev => ({
+    if (activeCompanyForDetails && activeCompanyForDetails.id === id) {
+      setActiveCompanyForDetails(prev => ({ ...prev, [field]: value }));
+    }
+  };
+
+  // Toggle visited complete
+  const handleToggleVisited = (id) => {
+    setCompanies(prev => prev.map(c => {
+      if (c.id === id) {
+        const nextState = !c.isCompleted;
+        return {
+          ...c,
+          isCompleted: nextState,
+          visitStatus: nextState ? 'Visited (Met HR)' : 'Yet to Visit'
+        };
+      }
+      return c;
+    }));
+
+    if (activeCompanyForDetails && activeCompanyForDetails.id === id) {
+      setActiveCompanyForDetails(prev => ({
         ...prev,
-        isCompleted: nextState,
-        visitStatus: nextState ? 'Direct Visit Completed - Met HR/Manager' : 'Yet to Visit'
+        isCompleted: !prev.isCompleted,
+        visitStatus: !prev.isCompleted ? 'Visited (Met HR)' : 'Yet to Visit'
       }));
     }
-
-    if (nextState && affectedCompany) {
-      setLastVisitedAction({
-        company: affectedCompany,
-        timestamp: Date.now()
-      });
-    } else {
-      setLastVisitedAction(null);
-    }
   };
 
-  const handleInstantUndo = () => {
-    if (lastVisitedAction && lastVisitedAction.company) {
-      executeToggle(lastVisitedAction.company.id, false);
-      setLastVisitedAction(null);
-    }
-  };
-
-  const handleUpdateStatus = (id, field, val) => {
-    setCompanies(prev => prev.map(c => c.id === id ? { ...c, [field]: val } : c));
-  };
-
+  // Save Notes
   const handleSaveNotes = (id) => {
-    setCompanies(prev => prev.map(c => c.id === id ? { ...c, notes: tempNotes, contactPerson: tempContact } : c));
-    setEditingNotesId(null);
+    setCompanies(prev => prev.map(c => c.id === id ? { ...c, notes: tempNotes } : c));
+    if (activeCompanyForDetails && activeCompanyForDetails.id === id) {
+      setActiveCompanyForDetails(prev => ({ ...prev, notes: tempNotes }));
+    }
   };
 
-  const triggerResetAll = () => {
-    setConfirmModalData({
-      isOpen: true,
-      title: `Reset ${selectedCity} Directory?`,
-      company: null,
-      message: `Are you sure you want to reset all records for ${selectedCity} back to default? Any custom strike-offs or notes will be cleared.`,
-      type: "danger",
-      onConfirm: () => {
-        const registry = getCityRegistry(selectedCity);
-        const initialList = [];
-        registry.forEach(sec => {
-          sec.companies.forEach(comp => {
-            initialList.push({ ...comp, isCompleted: false, city: comp.city || selectedCity });
-          });
-        });
-        setCompanies(initialList);
-        localStorage.setItem(`${CITY_STORAGE_PREFIX}${selectedCity.toLowerCase()}`, JSON.stringify(initialList));
-      }
-    });
+  // Reset database back to verified Pondicherry IT list
+  const handleResetData = () => {
+    if (window.confirm("Pondicherry IT Company list-ah verified fresh data-ku reset panna venduma?")) {
+      setCompanies(VERIFIED_PONDICHERRY_IT_COMPANIES);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(VERIFIED_PONDICHERRY_IT_COMPANIES));
+    }
   };
 
-  // Filtered & Distance-sorted list based on user location
+  // Clean filtered list
   const filtered = useMemo(() => {
-    let list = companies.filter(c => {
-      if (hideDone && c.isCompleted) return false;
-      const q = search.toLowerCase();
-      const matchQ = !q || c.name.toLowerCase().includes(q) || c.area.toLowerCase().includes(q) || (c.techStack && c.techStack.join(' ').toLowerCase().includes(q));
-      const matchArea = selectedArea === 'All Areas' || c.area.toLowerCase().includes(selectedArea.toLowerCase());
-      return matchQ && matchArea;
-    });
+    return companies.filter(c => {
+      if (hideVisited && c.isCompleted) return false;
 
-    // Compute live distance from user position
-    const refPoint = userLocation || [11.9360, 79.8290];
-    list = list.map(c => {
-      const dist = (c.lat && c.lng) 
-        ? calculateDist(refPoint[0], refPoint[1], c.lat, c.lng) 
-        : 99999;
-      return { ...c, distanceKm: dist };
-    });
-
-    // Sort: Nearest to user location first! (Unvisited first, then visited at bottom if not hidden)
-    list.sort((a, b) => {
-      if (a.isCompleted !== b.isCompleted) {
-        return a.isCompleted ? 1 : -1;
+      const q = search.toLowerCase().trim();
+      if (q) {
+        const matchName = c.name?.toLowerCase().includes(q);
+        const matchArea = c.area?.toLowerCase().includes(q);
+        const matchCat = c.category?.toLowerCase().includes(q);
+        const matchPhone = c.phone?.replace(/[^0-9]/g, '').includes(q.replace(/[^0-9]/g, ''));
+        if (!matchName && !matchArea && !matchCat && !matchPhone) return false;
       }
-      return a.distanceKm - b.distanceKm;
+
+      if (selectedArea !== 'All Areas' && !c.area.toLowerCase().includes(selectedArea.toLowerCase())) {
+        return false;
+      }
+
+      if (selectedStatusFilter !== 'All Status') {
+        if (c.callingStatus !== selectedStatusFilter && c.visitStatus !== selectedStatusFilter) {
+          return false;
+        }
+      }
+
+      return true;
     });
+  }, [companies, search, selectedArea, selectedStatusFilter, hideVisited]);
 
-    return list;
-  }, [companies, hideDone, search, selectedArea, userLocation]);
-
-  const completedCount = companies.filter(c => c.isCompleted).length;
-  const pendingCount = companies.length - completedCount;
+  const visitedCount = companies.filter(c => c.isCompleted).length;
+  const pendingCount = companies.length - visitedCount;
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-slate-50 text-slate-800 flex flex-col font-sans">
-      {/* 1. STICKY TOP NAVBAR (NEVER SCROLLS AWAY) */}
-      <header className="bg-white border-b border-slate-200 px-2 sm:px-6 py-2 flex items-center justify-between gap-1.5 sm:gap-2 z-40 flex-shrink-0 shadow-xs">
-        {/* Left: Active Location Button & Quick Building Scan Button */}
-        <div className="flex items-center gap-1.5 min-w-0">
-          <button
-            onClick={() => setIsBuildingAuditOpen(true)}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white active:scale-95 rounded-xl px-2.5 py-1.5 shadow-xs font-black text-xs transition-all"
-            title="Open Building-by-Building Deep Scan Drawer"
-          >
-            <Building2 className="w-3.5 h-3.5" />
-            <span>🏢 Buildings</span>
-          </button>
-
-          <button
-            onClick={() => setIsAddCityModalOpen(true)}
-            className="flex items-center gap-1.5 bg-slate-100 hover:bg-blue-50 active:scale-95 border border-slate-300 hover:border-blue-400 rounded-xl px-2.5 py-1.5 shadow-2xs transition-all text-left"
-            title="Click to search and change location"
-          >
-            <MapPin className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 animate-pulse" />
-            <span className="text-xs font-black text-slate-900 tracking-tight">
-              {selectedCity}
-            </span>
-            <span className="text-[10px] font-bold text-blue-600 underline">
-              change
-            </span>
-          </button>
+    <div className="h-screen w-screen bg-slate-50 text-slate-800 flex flex-col font-sans overflow-hidden">
+      
+      {/* 1. CLEAN TOP HEADER */}
+      <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3 shadow-xs z-30">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-sm shadow-xs flex-shrink-0">
+            IT
+          </div>
+          <div className="min-w-0">
+            <h1 className="font-extrabold text-sm sm:text-base text-slate-900 leading-tight truncate">
+              Pondicherry IT Companies
+            </h1>
+            <p className="text-[11px] text-slate-500 font-semibold truncate flex items-center gap-1.5">
+              <span>Verified IT & Software Developers</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span className="text-emerald-700 font-bold">{companies.length} Total</span>
+            </p>
+          </div>
         </div>
 
-        {/* Right: Action Buttons */}
-        <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
-          {/* MAP ROUTE BUTTON */}
+        {/* Header Actions */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* MAP BUTTON */}
           <button
             onClick={() => {
               setFocusTargetForMap(null);
               setIsMapModalOpen(true);
             }}
-            className="px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black text-[11px] sm:text-xs shadow-sm flex items-center gap-1 transition-all"
-            title="Open Road Route Navigation"
+            className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition-all"
+            title="Open Road Route Map"
           >
-            <span>🗺️</span>
-            <span className="hidden sm:inline">MAP</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-blue-500 text-[10px] font-black">{pendingCount}</span>
+            <span>🗺️ MAP</span>
+            <span className="px-1.5 py-0.2 bg-blue-500 text-white rounded-full text-[10px] font-black">
+              {pendingCount}
+            </span>
           </button>
 
           {/* VISITED HISTORY BUTTON */}
           <button
             onClick={() => setIsHistoryModalOpen(true)}
-            className="px-1.5 sm:px-2.5 py-1.5 sm:py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-extrabold text-[11px] sm:text-xs flex items-center gap-1 shadow-xs active:scale-95 transition-all"
-            title="View Visited Companies History & Undo"
+            className="px-2.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center gap-1 shadow-2xs active:scale-95 transition-all"
+            title="View Visited Companies"
           >
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-            <span className="hidden md:inline">Visited</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-emerald-600 text-white text-[10px] font-black">{completedCount}</span>
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">Visited</span>
+            <span className="px-1.5 py-0.2 bg-emerald-600 text-white rounded-full text-[10px] font-black">
+              {visitedCount}
+            </span>
           </button>
 
-          {/* SYNC / SCAN BUTTON */}
-          <button
-            onClick={() => setIsBuildingAuditOpen(true)}
-            className="p-1.5 sm:px-2.5 sm:py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-xs active:scale-95 transition-all"
-            title="Open Building-by-Building Deep Scan Drawer (or swipe from left)"
-          >
-            <Building2 className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">Building Scan</span>
-          </button>
-
-          {/* Export Excel */}
+          {/* EXCEL EXPORT */}
           <button
             onClick={() => exportToExcel(companies)}
-            className="p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs active:scale-95 transition-all"
             title="Export Excel"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600" />
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
           </button>
 
-          {/* Reset Button */}
+          {/* RESET */}
           <button
-            onClick={triggerResetAll}
-            className="p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 border border-slate-200"
-            title="Reset directory"
+            onClick={handleResetData}
+            className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200 text-xs active:scale-95 transition-all"
+            title="Reset to fresh verified data"
           >
-            <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <RotateCcw className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      {/* 2. STICKY TOP FILTER BAR (NEVER SCROLLS AWAY) */}
-      <div className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 z-30 flex-shrink-0 shadow-xs">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          {/* Search Box */}
-          <div className="flex-1 min-w-[180px] relative">
+      {/* 2. SIMPLE FILTER & SEARCH BAR (Zero clutter) */}
+      <div className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2 z-20 shadow-2xs">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-2">
+          {/* Search */}
+          <div className="flex-1 min-w-[200px] relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
-              placeholder="Search company, tech, area..."
+              placeholder="Search IT company name, phone, or tech..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full pl-9 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:bg-white focus:border-blue-500 transition-colors"
@@ -583,56 +255,65 @@ export default function App() {
             {search && (
               <button
                 onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors"
-                title="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Area Filter */}
-            <select
-              value={selectedArea}
-              onChange={e => setSelectedArea(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-xs text-slate-800 font-bold py-1.5 px-2.5 rounded-xl outline-none cursor-pointer"
-            >
-              {(customCityConfigs[selectedCity]?.mainAreas || CITIES_CONFIG[selectedCity]?.mainAreas || ["All Areas"]).map(a => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
+          {/* Area Filter */}
+          <select
+            value={selectedArea}
+            onChange={e => setSelectedArea(e.target.value)}
+            className="bg-slate-50 border border-slate-200 text-xs text-slate-800 font-bold py-1.5 px-2.5 rounded-xl outline-none cursor-pointer"
+          >
+            {uniqueAreas.map(a => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
 
-            {/* Hide Visited Checkbox */}
-            <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200">
-              <input
-                type="checkbox"
-                checked={hideDone}
-                onChange={e => setHideDone(e.target.checked)}
-                className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
-              />
-              <span className="font-semibold text-[11px]">Hide ({completedCount})</span>
-            </label>
-          </div>
+          {/* Status Highlight Filter */}
+          <select
+            value={selectedStatusFilter}
+            onChange={e => setSelectedStatusFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 text-xs text-slate-800 font-bold py-1.5 px-2.5 rounded-xl outline-none cursor-pointer"
+          >
+            <option value="All Status">All Status</option>
+            <option value="Positive / Interview">⭐ Positive / Interview</option>
+            <option value="Called - Follow Up">⏳ Follow Up Needed</option>
+            <option value="Visited (Met HR)">✅ Visited (Met HR)</option>
+            <option value="No Answer / Switch Off">📞 No Answer / Switch Off</option>
+            <option value="Not Hiring / Rejected">❌ Not Hiring / Rejected</option>
+          </select>
+
+          {/* Hide Visited Checkbox */}
+          <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 font-bold">
+            <input
+              type="checkbox"
+              checked={hideVisited}
+              onChange={e => setHideVisited(e.target.checked)}
+              className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
+            />
+            <span>Hide Visited ({visitedCount})</span>
+          </label>
         </div>
       </div>
 
-      {/* 3. SCROLLABLE TABLE AREA WITH FROZEN / STICKY TABLE HEADER */}
-      <main className="flex-1 overflow-hidden p-3 sm:p-5 max-w-7xl w-full mx-auto flex flex-col">
+      {/* 3. CLEAN DIRECTORY TABLE */}
+      <main className="flex-1 overflow-hidden p-2 sm:p-5 max-w-7xl w-full mx-auto flex flex-col">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs flex-1 flex flex-col overflow-hidden">
-          {/* Internal Scroll Container for Table Rows */}
           <div className="flex-1 overflow-auto">
             <table className="w-full text-left text-xs border-collapse">
-              {/* STICKY THEAD - Table scroll panna kooda header maraiyaave marayathu! */}
-              <thead className="sticky top-0 z-20 shadow-xs bg-slate-100/95 backdrop-blur-md">
-                <tr className="text-slate-700 font-extrabold uppercase tracking-wider text-[11px] border-b border-slate-200">
-                  <th className="py-2.5 px-1.5 w-7 text-center bg-slate-100/95">Done</th>
-                  <th className="py-2.5 px-1 w-6 text-center bg-slate-100/95">#</th>
-                  <th className="py-2.5 px-3 min-w-[200px] bg-slate-100/95">Company Name & Area</th>
-                  <th className="py-2.5 px-2.5 min-w-[130px] hidden md:table-cell bg-slate-100/95">Calling Status</th>
-                  <th className="py-2.5 px-2.5 min-w-[130px] hidden md:table-cell bg-slate-100/95">Visit Status</th>
-                  <th className="py-2.5 px-3 whitespace-nowrap min-w-[145px] bg-slate-100/95">Phone Number</th>
-                  <th className="py-2.5 px-2.5 text-center min-w-[100px] bg-slate-100/95">Actions</th>
+              <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
+                <tr className="text-slate-700 font-black uppercase text-[11px] tracking-wider">
+                  <th className="py-2.5 px-2 w-10 text-center">Done</th>
+                  <th className="py-2.5 px-1.5 w-8 text-center">#</th>
+                  <th className="py-2.5 px-3 min-w-[200px]">Company & Area</th>
+                  <th className="py-2.5 px-3 min-w-[140px]">Phone Number</th>
+                  <th className="py-2.5 px-3 min-w-[140px] hidden md:table-cell">Calling Status</th>
+                  <th className="py-2.5 px-3 min-w-[140px] hidden md:table-cell">Visit Status</th>
+                  <th className="py-2.5 px-3 text-center min-w-[110px]">Google Map / Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -644,110 +325,59 @@ export default function App() {
 
                   return (
                     <tr 
-                      key={c.id || idx} 
-                      className={`transition-all duration-150 ${
+                      key={c.id}
+                      className={`transition-colors ${
                         isDone 
-                          ? 'bg-slate-50/70 opacity-45 select-none grayscale' 
+                          ? 'bg-slate-50/70 opacity-50 grayscale select-none' 
                           : 'hover:bg-blue-50/40 cursor-pointer'
                       }`}
-                      onClick={(e) => {
-                        if (e.target.closest('button') || e.target.closest('a') || e.target.closest('input') || e.target.closest('select')) {
-                          return;
-                        }
-                        setActiveMobileCompany(c);
+                      onClick={() => {
+                        setActiveCompanyForDetails(c);
+                        setTempNotes(c.notes || '');
                       }}
                     >
-                      {/* Done Checkbox - Compact & Tight */}
-                      <td className="py-2.5 px-1.5 w-7 text-center" onClick={(e) => e.stopPropagation()}>
+                      {/* Done Checkbox */}
+                      <td className="py-2.5 px-2 text-center" onClick={e => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={isDone}
-                          onChange={() => triggerToggleDone(c)}
-                          className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
-                          title="Click to toggle visited status"
+                          onChange={() => handleToggleVisited(c.id)}
+                          className="w-4 h-4 accent-emerald-600 rounded cursor-pointer"
+                          title="Toggle Visited status"
                         />
                       </td>
 
-                      {/* Index */}
-                      <td className="py-2.5 px-1 w-6 text-center text-slate-400 font-mono text-[11px]">
+                      {/* Number */}
+                      <td className="py-2.5 px-1.5 text-center font-mono text-slate-400 text-[11px]">
                         {idx + 1}
                       </td>
 
-                      {/* Company Name & Area */}
+                      {/* Company Name, Area & Category */}
                       <td className="py-2.5 px-3">
                         <div className="flex items-center justify-between">
-                          <span className={`font-bold text-sm ${
-                            isDone ? 'line-through text-slate-400 decoration-rose-500 decoration-2' : 'text-slate-900'
+                          <span className={`font-extrabold text-sm ${
+                            isDone ? 'line-through text-slate-400' : 'text-slate-900'
                           }`}>
                             {c.name}
                           </span>
-                          <span className="md:hidden text-[10px] text-blue-600 font-bold ml-1">
-                            Details ›
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span className="px-2 py-0.2 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                            📍 {c.area}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-semibold truncate max-w-[200px]">
+                            {c.category}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className={`px-2 py-0.2 rounded text-[10px] font-semibold border ${
-                            isDone 
-                              ? 'bg-slate-100 text-slate-400 border-slate-200 line-through' 
-                              : 'bg-blue-50 text-blue-700 border-blue-100'
-                          }`}>
-                            {c.area}
-                          </span>
-                          {c.distanceKm !== undefined && c.distanceKm < 9999 && (
-                            <span className="text-[10px] font-extrabold text-orange-600 bg-orange-50 border border-orange-200 px-1.5 py-0.2 rounded font-mono">
-                              📍 ~{c.distanceKm.toFixed(1)} km
-                            </span>
-                          )}
-                          {c.notes && (
-                            <span className="text-[10px] text-emerald-600 font-semibold truncate max-w-[130px]">
-                              📝 {c.notes}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-500 truncate max-w-[210px] sm:max-w-none mt-0.5" title={c.address}>
-                          📍 {c.address}
-                        </div>
                       </td>
 
-                      {/* Desktop Calling Status */}
-                      <td className="py-2.5 px-3 hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
-                        <select
-                          disabled={isDone}
-                          value={c.callingStatus || 'Not Called'}
-                          onChange={e => handleUpdateStatus(c.id, 'callingStatus', e.target.value)}
-                          className="w-full py-1.5 px-2 rounded-lg border text-xs font-semibold bg-white border-slate-300"
-                        >
-                          <option value="Not Called">Not Called</option>
-                          <option value="Called - Follow Up Needed">Follow Up Needed</option>
-                          <option value="Called - Positive / Interview Scheduled">Positive / Interview</option>
-                          <option value="Called - Not Hiring / Rejected">Not Hiring</option>
-                          <option value="No Answer / Switched Off">No Answer</option>
-                        </select>
-                      </td>
-
-                      {/* Desktop Visit Status */}
-                      <td className="py-2.5 px-3 hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
-                        <select
-                          disabled={isDone}
-                          value={c.visitStatus || 'Yet to Visit'}
-                          onChange={e => handleUpdateStatus(c.id, 'visitStatus', e.target.value)}
-                          className="w-full py-1.5 px-2 rounded-lg border text-xs font-semibold bg-white border-slate-300"
-                        >
-                          <option value="Yet to Visit">Yet to Visit</option>
-                          <option value="Direct Visit Completed - Met HR/Manager">Direct Visited (Met HR)</option>
-                          <option value="Office Found & Verified">Office Verified</option>
-                          <option value="Office Shifted / Not at this Address">Office Shifted</option>
-                        </select>
-                      </td>
-
-                      {/* Phone - Single line nowrap, clean spacing */}
-                      <td className="py-2.5 px-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {/* Phone Number (Verified, direct dial) */}
+                      <td className="py-2.5 px-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         {c.phone ? (
                           <a
                             href={`tel:${c.phone.replace(/[^0-9+]/g, '')}`}
-                            className={`font-extrabold text-xs inline-flex items-center gap-1.5 ${
-                              isDone ? 'text-slate-400 line-through' : 'text-emerald-700 hover:text-emerald-800'
-                            }`}
+                            className="font-extrabold text-xs inline-flex items-center gap-1.5 text-emerald-700 hover:text-emerald-800"
+                            title="Click to dial"
                           >
                             <Phone className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
                             <span className="font-mono tracking-tight">{c.phone}</span>
@@ -757,37 +387,62 @@ export default function App() {
                         )}
                       </td>
 
-                      {/* Action buttons */}
-                      <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      {/* Calling Status Selector with HIGHLIGHT BADGE */}
+                      <td className="py-2.5 px-3 hidden md:table-cell" onClick={e => e.stopPropagation()}>
+                        <select
+                          value={c.callingStatus || 'Not Called'}
+                          onChange={e => handleUpdateStatus(c.id, 'callingStatus', e.target.value)}
+                          className={`w-full py-1.5 px-2 rounded-xl text-xs border outline-none font-bold cursor-pointer transition-all ${
+                            CALLING_STATUS_STYLES[c.callingStatus] || 'bg-slate-100 border-slate-300'
+                          }`}
+                        >
+                          <option value="Not Called">Not Called</option>
+                          <option value="Called - Follow Up">⏳ Follow Up Needed</option>
+                          <option value="Positive / Interview">⭐ Positive / Interview</option>
+                          <option value="Not Hiring / Rejected">❌ Not Hiring / Rejected</option>
+                          <option value="No Answer / Switch Off">📞 No Answer / Switch Off</option>
+                        </select>
+                      </td>
+
+                      {/* Visit Status Selector with HIGHLIGHT BADGE */}
+                      <td className="py-2.5 px-3 hidden md:table-cell" onClick={e => e.stopPropagation()}>
+                        <select
+                          value={c.visitStatus || 'Yet to Visit'}
+                          onChange={e => handleUpdateStatus(c.id, 'visitStatus', e.target.value)}
+                          className={`w-full py-1.5 px-2 rounded-xl text-xs border outline-none font-bold cursor-pointer transition-all ${
+                            VISIT_STATUS_STYLES[c.visitStatus] || 'bg-slate-100 border-slate-300'
+                          }`}
+                        >
+                          <option value="Yet to Visit">Yet to Visit</option>
+                          <option value="Visited (Met HR)">✅ Visited (Met HR)</option>
+                          <option value="Office Verified">🏢 Office Verified</option>
+                          <option value="Office Shifted">⚠️ Office Shifted</option>
+                        </select>
+                      </td>
+
+                      {/* Direct Google Maps & Action */}
+                      <td className="py-2.5 px-3 text-center" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
-                          {c.phone && (
-                            <a
-                              href={`tel:${c.phone.replace(/[^0-9+]/g, '')}`}
-                              className={`p-1.5 rounded-lg ${
-                                isDone ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-emerald-100 text-emerald-800'
-                              }`}
-                              title="Call"
-                            >
-                              <Phone className="w-3.5 h-3.5" />
-                            </a>
-                          )}
                           <a
                             href={mapsUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className={`p-1.5 rounded-lg ${
-                              isDone ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-blue-100 text-blue-800'
-                            }`}
-                            title="Google Maps"
+                            className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-extrabold text-[11px] flex items-center gap-1 shadow-2xs"
+                            title="Open Google Maps direction"
                           >
                             <Navigation className="w-3.5 h-3.5" />
+                            <span>Map</span>
                           </a>
+
                           <button
-                            onClick={() => setActiveMobileCompany(c)}
-                            className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200"
-                            title="View Options & Notes"
+                            onClick={() => {
+                              setActiveCompanyForDetails(c);
+                              setTempNotes(c.notes || '');
+                            }}
+                            className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
+                            title="View details & edit notes"
                           >
-                            <ChevronRight className="w-3.5 h-3.5" />
+                            <Info className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -800,203 +455,148 @@ export default function App() {
         </div>
       </main>
 
-      {/* MOBILE POPUP / BOTTOM DRAWER FOR COMPANY CLICK IN TABLE */}
-      {activeMobileCompany && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in slide-in-from-bottom-5 duration-200 flex flex-col max-h-[85vh] mb-0 sm:mb-auto">
+      {/* 4. CLEAN COMPANY DETAILS & STATUS POPUP */}
+      {activeCompanyForDetails && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 text-white flex items-start justify-between gap-3">
+            <div className="bg-blue-600 text-white p-4 flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-black bg-white/20 text-white">
-                    📍 {activeMobileCompany.area}
-                  </span>
-                  {activeMobileCompany.isCompleted && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-400 text-emerald-950">
-                      ✓ Visited
-                    </span>
-                  )}
-                </div>
-                <h3 className="font-extrabold text-base leading-snug break-words">
-                  {activeMobileCompany.name}
+                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-white/20 text-white inline-block mb-1">
+                  📍 {activeCompanyForDetails.area}
+                </span>
+                <h3 className="font-extrabold text-base leading-snug">
+                  {activeCompanyForDetails.name}
                 </h3>
-                <p className="text-xs text-blue-100 truncate mt-0.5">
-                  {activeMobileCompany.address}
+                <p className="text-xs text-blue-100 mt-0.5">
+                  {activeCompanyForDetails.category}
                 </p>
               </div>
               <button
-                onClick={() => setActiveMobileCompany(null)}
-                className="p-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white flex-shrink-0"
+                onClick={() => setActiveCompanyForDetails(null)}
+                className="p-1 rounded-xl bg-white/20 hover:bg-white/30 text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Modal Body / Status Options */}
-            <div className="p-4 space-y-3.5 overflow-y-auto text-xs">
-              {/* Quick Dial & Maps Nav Row */}
-              <div className="grid grid-cols-2 gap-2">
-                {activeMobileCompany.phone ? (
+            {/* Body */}
+            <div className="p-4 space-y-3.5 text-xs">
+              {/* Address with Google Maps Button */}
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                <span className="text-[10px] font-black uppercase text-slate-400 block mb-1">
+                  Full Verified Address:
+                </span>
+                <p className="font-bold text-slate-800 text-xs">
+                  {activeCompanyForDetails.address}
+                </p>
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200">
                   <a
-                    href={`tel:${activeMobileCompany.phone.replace(/[^0-9+]/g, '')}`}
-                    className="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm text-center truncate"
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                      activeCompanyForDetails.mapsQuery || `${activeCompanyForDetails.name} ${activeCompanyForDetails.area} Pondicherry`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-center flex items-center justify-center gap-1.5 shadow-2xs"
                   >
-                    <Phone className="w-4 h-4 flex-shrink-0" />
-                    <span className="truncate">Call Now</span>
+                    <Navigation className="w-3.5 h-3.5" />
+                    <span>Open in Google Maps</span>
                   </a>
-                ) : (
-                  <button disabled className="py-2.5 px-2 rounded-xl bg-slate-100 text-slate-400 font-semibold text-xs text-center cursor-not-allowed">
-                    No Phone
-                  </button>
-                )}
 
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                    activeMobileCompany.mapsQuery || `${activeMobileCompany.name} ${activeMobileCompany.area} Pondicherry`
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="py-2.5 px-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm text-center truncate"
-                >
-                  <Navigation className="w-4 h-4 flex-shrink-0" />
-                  <span className="truncate">Google Maps</span>
-                </a>
-              </div>
-
-              {/* Calling Status Selector */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Calling Status:
-                </label>
-                <select
-                  value={activeMobileCompany.callingStatus || 'Not Called'}
-                  onChange={e => {
-                    handleUpdateStatus(activeMobileCompany.id, 'callingStatus', e.target.value);
-                    setActiveMobileCompany(prev => ({ ...prev, callingStatus: e.target.value }));
-                  }}
-                  className="w-full py-2 px-3 rounded-xl border border-slate-300 font-bold bg-slate-50 outline-none"
-                >
-                  <option value="Not Called">Not Called</option>
-                  <option value="Called - Follow Up Needed">Called - Follow Up Needed</option>
-                  <option value="Called - Positive / Interview Scheduled">Called - Positive / Interview</option>
-                  <option value="Called - Not Hiring / Rejected">Called - Not Hiring</option>
-                  <option value="No Answer / Switched Off">No Answer / Switched Off</option>
-                </select>
-              </div>
-
-              {/* Physical Visit Status Selector */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Physical Visit Status:
-                </label>
-                <select
-                  value={activeMobileCompany.visitStatus || 'Yet to Visit'}
-                  onChange={e => {
-                    handleUpdateStatus(activeMobileCompany.id, 'visitStatus', e.target.value);
-                    setActiveMobileCompany(prev => ({ ...prev, visitStatus: e.target.value }));
-                  }}
-                  className="w-full py-2 px-3 rounded-xl border border-slate-300 font-bold bg-slate-50 outline-none"
-                >
-                  <option value="Yet to Visit">Yet to Visit</option>
-                  <option value="Direct Visit Completed - Met HR/Manager">Direct Visit Completed - Met HR</option>
-                  <option value="Office Found & Verified">Office Found & Verified</option>
-                  <option value="Office Shifted / Not at this Address">Office Shifted / Not at this Address</option>
-                </select>
-              </div>
-
-              {/* Editable Notes & HR Details */}
-              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-extrabold text-[11px] text-slate-700 flex items-center gap-1">
-                    <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-                    HR Contact & Notes
-                  </span>
-                  {editingNotesId !== activeMobileCompany.id && (
-                    <button
-                      onClick={() => {
-                        setEditingNotesId(activeMobileCompany.id);
-                        setTempNotes(activeMobileCompany.notes || '');
-                        setTempContact(activeMobileCompany.contactPerson || '');
-                      }}
-                      className="text-blue-600 font-bold text-[11px] flex items-center gap-1"
+                  {activeCompanyForDetails.phone && (
+                    <a
+                      href={`tel:${activeCompanyForDetails.phone.replace(/[^0-9+]/g, '')}`}
+                      className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-center flex items-center justify-center gap-1.5 shadow-2xs"
                     >
-                      <Edit2 className="w-3 h-3" /> Edit Notes
-                    </button>
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>Call Now</span>
+                    </a>
                   )}
                 </div>
-
-                {editingNotesId === activeMobileCompany.id ? (
-                  <div className="space-y-2 mt-2">
-                    <input
-                      type="text"
-                      placeholder="HR Name / Contact..."
-                      value={tempContact}
-                      onChange={e => setTempContact(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs outline-none"
-                    />
-                    <textarea
-                      rows={2}
-                      placeholder="Interview or visit notes..."
-                      value={tempNotes}
-                      onChange={e => setTempNotes(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs outline-none"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => setEditingNotesId(null)}
-                        className="px-2.5 py-1 text-slate-500 font-medium"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={() => {
-                          handleSaveNotes(activeMobileCompany.id);
-                          setActiveMobileCompany(prev => ({
-                            ...prev,
-                            notes: tempNotes,
-                            contactPerson: tempContact
-                          }));
-                        }}
-                        className="px-3 py-1 bg-blue-600 text-white rounded-lg font-bold flex items-center gap-1"
-                      >
-                        <Check className="w-3 h-3" /> Save
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-slate-800 font-semibold mb-1">
-                      {activeMobileCompany.contactPerson || <span className="text-slate-400 italic">No contact specified</span>}
-                    </p>
-                    <p className="text-slate-600 italic">
-                      {activeMobileCompany.notes || 'No notes added yet. Tap "Edit Notes" to write.'}
-                    </p>
-                  </div>
-                )}
               </div>
 
-              {/* Big Visited Toggle Button with Direct Update & Auto-Close Drawer */}
+              {/* Status Selectors with Immediate Visual Feedback */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
+                    Calling Status:
+                  </label>
+                  <select
+                    value={activeCompanyForDetails.callingStatus || 'Not Called'}
+                    onChange={e => handleUpdateStatus(activeCompanyForDetails.id, 'callingStatus', e.target.value)}
+                    className={`w-full p-2 rounded-xl text-xs border font-extrabold outline-none cursor-pointer ${
+                      CALLING_STATUS_STYLES[activeCompanyForDetails.callingStatus] || 'bg-slate-50 border-slate-300'
+                    }`}
+                  >
+                    <option value="Not Called">Not Called</option>
+                    <option value="Called - Follow Up">⏳ Follow Up Needed</option>
+                    <option value="Positive / Interview">⭐ Positive / Interview</option>
+                    <option value="Not Hiring / Rejected">❌ Not Hiring / Rejected</option>
+                    <option value="No Answer / Switch Off">📞 No Answer / Switch Off</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
+                    Physical Visit Status:
+                  </label>
+                  <select
+                    value={activeCompanyForDetails.visitStatus || 'Yet to Visit'}
+                    onChange={e => handleUpdateStatus(activeCompanyForDetails.id, 'visitStatus', e.target.value)}
+                    className={`w-full p-2 rounded-xl text-xs border font-extrabold outline-none cursor-pointer ${
+                      VISIT_STATUS_STYLES[activeCompanyForDetails.visitStatus] || 'bg-slate-50 border-slate-300'
+                    }`}
+                  >
+                    <option value="Yet to Visit">Yet to Visit</option>
+                    <option value="Visited (Met HR)">✅ Visited (Met HR)</option>
+                    <option value="Office Verified">🏢 Office Verified</option>
+                    <option value="Office Shifted">⚠️ Office Shifted</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="text-[11px] font-extrabold text-slate-600 uppercase block mb-1">
+                  Field Notes / HR Details:
+                </label>
+                <textarea
+                  rows={2}
+                  value={tempNotes}
+                  onChange={e => setTempNotes(e.target.value)}
+                  placeholder="Enter HR name or interview details here..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs outline-none focus:bg-white focus:border-blue-500"
+                />
+                <button
+                  onClick={() => {
+                    handleSaveNotes(activeCompanyForDetails.id);
+                    alert("Notes saved!");
+                  }}
+                  className="mt-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold rounded-xl text-xs flex items-center gap-1 ml-auto"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Save Notes</span>
+                </button>
+              </div>
+
+              {/* Mark Visited Toggle Button */}
               <button
-                onClick={() => {
-                  const targetComp = activeMobileCompany;
-                  executeToggle(targetComp.id, !targetComp.isCompleted);
-                  setActiveMobileCompany(null);
-                }}
-                className={`w-full py-3 px-4 rounded-2xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition-all ${
-                  activeMobileCompany.isCompleted
-                    ? 'bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300'
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30'
+                onClick={() => handleToggleVisited(activeCompanyForDetails.id)}
+                className={`w-full py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all ${
+                  activeCompanyForDetails.isCompleted
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-700 border border-slate-300'
                 }`}
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>{activeMobileCompany.isCompleted ? 'Uncheck Visited (Re-enable)' : 'Mark as Visited ✓'}</span>
+                <span>{activeCompanyForDetails.isCompleted ? 'Visited ✓ (Click to Unmark)' : 'Mark as Visited'}</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Connected Real Road Map Modal */}
+      {/* Road Route Map Modal */}
       <RouteMapModal
         isOpen={isMapModalOpen}
         onClose={() => {
@@ -1005,82 +605,23 @@ export default function App() {
         }}
         companies={companies}
         focusCompany={focusTargetForMap}
-        activeCity={selectedCity}
-        cityAreas={customCityConfigs[selectedCity]?.mainAreas || CITIES_CONFIG[selectedCity]?.mainAreas || []}
-        onToggleComplete={(id) => {
-          const comp = companies.find(c => c.id === id);
-          if (comp) {
-            executeToggle(id, !comp.isCompleted);
-          }
-        }}
+        activeCity="Pondicherry"
+        cityAreas={uniqueAreas}
+        onToggleComplete={handleToggleVisited}
       />
 
-      {/* Visited Companies History Modal */}
+      {/* Visited History Modal */}
       <VisitedHistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
         companies={companies}
-        onUndoVisited={(comp) => {
-          executeToggle(comp.id, false);
-        }}
+        onUndoVisited={(comp) => handleToggleVisited(comp.id)}
         onOpenMapForCompany={(comp) => {
           setFocusTargetForMap(comp);
           setIsMapModalOpen(true);
         }}
       />
 
-      {/* Add Any City / Town Modal */}
-      <AddCityModal
-        isOpen={isAddCityModalOpen}
-        onClose={() => setIsAddCityModalOpen(false)}
-        existingCities={cityList}
-        onAddNewCity={handleAddNewCity}
-      />
-
-      {/* Building-by-Building Deep Scan Drawer (Swipe left-to-right or tap button) */}
-      <BuildingAuditDrawer
-        isOpen={isBuildingAuditOpen}
-        onClose={() => setIsBuildingAuditOpen(false)}
-        existingCompanies={companies}
-        onAddNewCompany={(newComp) => {
-          setCompanies(prev => [newComp, ...prev]);
-        }}
-      />
-
-      {/* Instant Undo Toast Notification when accidentally visited */}
-      {lastVisitedAction && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in slide-in-from-bottom-3 duration-200">
-          <span className="text-xs font-medium truncate max-w-[200px] sm:max-w-xs">
-            Marked <span className="font-bold text-emerald-400">"{lastVisitedAction.company.name}"</span> as visited
-          </span>
-          <button
-            onClick={handleInstantUndo}
-            className="px-3 py-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs flex items-center gap-1 active:scale-95 shadow-xs"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>UNDO</span>
-          </button>
-          <button
-            onClick={() => setLastVisitedAction(null)}
-            className="text-slate-400 hover:text-white text-xs font-bold p-1"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Professional In-Theme Confirmation Modal (No Browser Default Alert!) */}
-      <ConfirmationModal
-        isOpen={confirmModalData.isOpen}
-        title={confirmModalData.title}
-        companyName={confirmModalData.company?.name}
-        message={confirmModalData.message}
-        confirmText="Yes, Confirm"
-        cancelText="Cancel"
-        type={confirmModalData.type}
-        onConfirm={confirmModalData.onConfirm}
-        onClose={() => setConfirmModalData(prev => ({ ...prev, isOpen: false }))}
-      />
     </div>
   );
 }
